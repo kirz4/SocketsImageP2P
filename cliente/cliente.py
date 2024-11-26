@@ -7,6 +7,9 @@ import json
 SERVER_IP = "127.0.0.1"
 SERVER_PORT = 13377
 
+# Porta TCP do cliente
+PORTA_TCP = None
+
 def calcular_md5(arquivo):
     """Calcula o hash MD5 de um arquivo."""
     print(f"[LOG] Calculando o hash MD5 do arquivo: {arquivo}")
@@ -17,11 +20,15 @@ def calcular_md5(arquivo):
 
 def registrar_cliente():
     """Registra o cliente no servidor."""
+    global PORTA_TCP
     try:
         print("[LOG] Iniciando registro do cliente...")
         senha = input("Digite uma senha para registro: ")
         porta_tcp = input("Digite a porta TCP para compartilhar arquivos: ")
         diretorio = input("Digite o diretório com imagens: ")
+
+        # Salva a porta TCP globalmente
+        PORTA_TCP = porta_tcp
 
         print(f"[LOG] Diretório fornecido: {diretorio}")
         if not os.path.isdir(diretorio):
@@ -72,14 +79,21 @@ def listar_imagens():
 
 def desconectar_cliente():
     """Desconecta o cliente do servidor."""
+    global PORTA_TCP
     try:
+        if not PORTA_TCP:
+            print("[ERRO] Porta TCP não registrada. Registre-se antes de desconectar.")
+            return
+
         print("[LOG] Solicitando desconexão do servidor...")
         senha = input("Digite sua senha para desconexão: ")
         mensagem = {
             "command": "END",
-            "senha": senha
+            "senha": senha,
+            "porta": PORTA_TCP  # Envia a porta TCP registrada
         }
 
+        print(f"[LOG] Enviando mensagem de desconexão: {mensagem}")
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
             client.sendto(json.dumps(mensagem).encode(), (SERVER_IP, SERVER_PORT))
             response, _ = client.recvfrom(1024)
@@ -89,6 +103,7 @@ def desconectar_cliente():
 
 def main():
     """Menu principal do cliente."""
+    global PORTA_TCP
     while True:
         print("\n1. Registrar cliente")
         print("2. Listar imagens disponíveis")
