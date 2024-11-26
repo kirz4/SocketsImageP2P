@@ -1,0 +1,8 @@
+# Bibliotecas padrão
+hashlib
+json
+os
+threading
+
+# Dependências externas
+pytest  # Para testes (opcional)
