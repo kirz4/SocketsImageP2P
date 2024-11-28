@@ -1,7 +1,11 @@
+import sys
 import os
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../cliente')))
+import cliente
 import json
 import socket
-import cliente
+
 
 def test_calcular_md5(tmp_path):
     """Testa o cálculo do hash MD5."""

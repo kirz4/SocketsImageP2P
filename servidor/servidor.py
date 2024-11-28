@@ -1,5 +1,6 @@
 import socket
 import json
+import threading
 
 # Configuração do servidor
 SERVER_IP = "127.0.0.1"
@@ -16,7 +17,7 @@ def registrar_cliente(data, addr):
     try:
         print(f"[LOG] Dados recebidos para registro: {data}")
         senha = data.get("senha")
-        porta = data.get("porta")
+        porta = int(data.get("porta"))
         imagens = data.get("imagens", [])
 
         if not senha or not porta or not imagens:
@@ -34,18 +35,56 @@ def registrar_cliente(data, addr):
                 imagens_compartilhadas[md5] = {"nome": nome, "clientes": []}
             imagens_compartilhadas[md5]["clientes"].append(f"{addr[0]}:{porta}")
 
+        # Inicia o servidor TCP para envio das imagens
+        tcp_thread = threading.Thread(target=start_tcp_server, args=(porta,))
+        tcp_thread.daemon = True
+        tcp_thread.start()
+
         print(f"[LOG] Imagens compartilhadas atualizadas: {imagens_compartilhadas}")
         return {"status": "OK", "message": f"{len(imagens)}_REGISTERED_IMAGES"}
     except Exception as e:
         print(f"[ERRO] Erro ao registrar cliente: {e}")
         return {"status": "ERR", "message": "INVALID_MESSAGE_FORMAT"}
-
+    
 def listar_imagens():
     """Retorna a lista de imagens compartilhadas."""
     print("[LOG] Listando imagens disponíveis...")
     return {"status": "OK", "imagens": [
         f"{md5},{info['nome']},{','.join(info['clientes'])}" for md5, info in imagens_compartilhadas.items()
     ]}
+
+def handle_client(conn, addr):
+    """Lida com a conexão de um cliente para envio de imagens."""
+    try:
+        print(f"[LOG] Conexão recebida de {addr}")
+        dados = conn.recv(1024).decode()
+
+        if dados.startswith("GET"):
+            _, md5 = dados.split()
+            if md5 in imagens_compartilhadas:
+                caminho_imagem = imagens_compartilhadas[md5]["nome"]
+                with open(caminho_imagem, "rb") as f:
+                    while chunk := f.read(4096):
+                        conn.sendall(chunk)
+                print(f"[LOG] Imagem {caminho_imagem} enviada para {addr}")
+            else:
+                print("[ERRO] Imagem não encontrada.")
+    except Exception as e:
+        print(f"[ERRO] Erro ao enviar imagem: {e}")
+    finally:
+        conn.close()
+
+def start_tcp_server(port):
+    """Inicia o servidor TCP para envio de imagens."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_server:
+        tcp_server.bind((SERVER_IP, port))
+        tcp_server.listen(5)
+        print(f"[LOG] Servidor TCP rodando na porta {port}...")
+
+        while True:
+            conn, addr = tcp_server.accept()
+            thread = threading.Thread(target=handle_client, args=(conn, addr))
+            thread.start()
 
 def desconectar_cliente(data, addr):
     """Desconecta um cliente do servidor."""
