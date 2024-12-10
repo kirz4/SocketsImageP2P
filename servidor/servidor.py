@@ -1,161 +1,165 @@
 import socket
-import json
-import threading
 
-# Configuração do servidor
-SERVER_IP = "127.0.0.1"
+SERVER_IP = "0.0.0.0"
 SERVER_PORT = 13377
 
-# Lista de clientes registrados
 clientes = []
-
-# Lista de imagens compartilhadas
 imagens_compartilhadas = {}
 
-def registrar_cliente(data, addr):
-    """Registra um cliente no servidor."""
-    try:
-        print(f"[LOG] Dados recebidos para registro: {data}")
-        senha = data.get("senha")
-        porta = int(data.get("porta"))
-        imagens = data.get("imagens", [])
+def encontrar_cliente(ip, porta):
+    for c in clientes:
+        if c["ip"] == ip and c["porta"] == porta:
+            return c
+    return None
 
-        if not senha or not porta or not imagens:
-            print("[ERRO] Dados incompletos no registro.")
-            return {"status": "ERR", "message": "INVALID_MESSAGE_FORMAT"}
+def registrar_cliente(senha, ip, porta, imagens):
+    if not senha or not porta or not imagens:
+        return "ERR INVALID_MESSAGE_FORMAT"
 
-        # Adiciona o cliente à lista
-        clientes.append({"ip": addr[0], "porta": porta, "senha": senha})
-        print(f"[LOG] Cliente registrado: {clientes[-1]}")
+    imagens_validas = []
+    for img in imagens:
+        if "," not in img:
+            return "ERR INVALID_MESSAGE_FORMAT"
+        md5, nome = img.split(",", 1)
+        if len(md5) != 32:
+            return "ERR INVALID_MESSAGE_FORMAT"
+        imagens_validas.append((md5, nome))
 
-        # Adiciona as imagens à lista compartilhada
-        for imagem in imagens:
-            md5, nome = imagem.split(",")
-            if md5 not in imagens_compartilhadas:
-                imagens_compartilhadas[md5] = {"nome": nome, "clientes": []}
-            imagens_compartilhadas[md5]["clientes"].append(f"{addr[0]}:{porta}")
-
-        # Inicia o servidor TCP para envio das imagens
-        tcp_thread = threading.Thread(target=start_tcp_server, args=(porta,))
-        tcp_thread.daemon = True
-        tcp_thread.start()
-
-        print(f"[LOG] Imagens compartilhadas atualizadas: {imagens_compartilhadas}")
-        return {"status": "OK", "message": f"{len(imagens)}_REGISTERED_IMAGES"}
-    except Exception as e:
-        print(f"[ERRO] Erro ao registrar cliente: {e}")
-        return {"status": "ERR", "message": "INVALID_MESSAGE_FORMAT"}
-    
-def listar_imagens():
-    """Retorna a lista de imagens compartilhadas."""
-    print("[LOG] Listando imagens disponíveis...")
-    return {"status": "OK", "imagens": [
-        f"{md5},{info['nome']},{','.join(info['clientes'])}" for md5, info in imagens_compartilhadas.items()
-    ]}
-
-def handle_client(conn, addr):
-    """Lida com a conexão de um cliente para envio de imagens."""
-    try:
-        print(f"[LOG] Conexão recebida de {addr}")
-        dados = conn.recv(1024).decode()
-
-        if dados.startswith("GET"):
-            _, md5 = dados.split()
-            if md5 in imagens_compartilhadas:
-                caminho_imagem = imagens_compartilhadas[md5]["nome"]
-                with open(caminho_imagem, "rb") as f:
-                    while chunk := f.read(4096):
-                        conn.sendall(chunk)
-                print(f"[LOG] Imagem {caminho_imagem} enviada para {addr}")
-            else:
-                print("[ERRO] Imagem não encontrada.")
-    except Exception as e:
-        print(f"[ERRO] Erro ao enviar imagem: {e}")
-    finally:
-        conn.close()
-
-def start_tcp_server(port):
-    """Inicia o servidor TCP para envio de imagens."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_server:
-        tcp_server.bind((SERVER_IP, port))
-        tcp_server.listen(5)
-        print(f"[LOG] Servidor TCP rodando na porta {port}...")
-
-        while True:
-            conn, addr = tcp_server.accept()
-            thread = threading.Thread(target=handle_client, args=(conn, addr))
-            thread.start()
-
-def desconectar_cliente(data, addr):
-    """Desconecta um cliente do servidor."""
-    try:
-        print(f"[LOG] Dados recebidos para desconexão: {data}")
-        senha = data.get("senha")
-        porta = data.get("porta")
-
-        if not senha or not porta:
-            print("[ERRO] Dados incompletos na solicitação de desconexão.")
-            return {"status": "ERR", "message": "INVALID_MESSAGE_FORMAT"}
-
-        # Localiza o cliente na lista
-        cliente = next((c for c in clientes if c["ip"] == addr[0] and c["porta"] == porta), None)
-        if not cliente:
-            print("[ERRO] Cliente não encontrado.")
-            return {"status": "ERR", "message": "CLIENT_NOT_FOUND"}
-
-        # Verifica a senha
-        if cliente["senha"] != senha:
-            print("[ERRO] Senha inválida fornecida para desconexão.")
-            return {"status": "ERR", "message": "INVALID_PASSWORD"}
-
-        # Remove o cliente da lista
-        clientes.remove(cliente)
-
-        # Remove as imagens associadas ao cliente
+    # Se já existe cliente com este IP e porta, remove-o antes (re-registro)
+    cliente_existente = encontrar_cliente(ip, porta)
+    if cliente_existente:
+        clientes.remove(cliente_existente)
+        # Remove associações antigas
         for md5, info in list(imagens_compartilhadas.items()):
-            info["clientes"] = [c for c in info["clientes"] if c != f"{addr[0]}:{porta}"]
+            if f"{ip}:{porta}" in info["clientes"]:
+                info["clientes"].remove(f"{ip}:{porta}")
+                if not info["clientes"]:
+                    del imagens_compartilhadas[md5]
+
+    cliente = {"ip": ip, "porta": porta, "senha": senha}
+    clientes.append(cliente)
+
+    for md5, nome in imagens_validas:
+        if md5 not in imagens_compartilhadas:
+            imagens_compartilhadas[md5] = {"nome": nome, "clientes": []}
+        if f"{ip}:{porta}" not in imagens_compartilhadas[md5]["clientes"]:
+            imagens_compartilhadas[md5]["clientes"].append(f"{ip}:{porta}")
+
+    return f"OK {len(imagens_validas)}_REGISTERED_IMAGES"
+
+def atualizar_registro(senha, ip, porta, imagens):
+    cliente = encontrar_cliente(ip, porta)
+    if not cliente or cliente["senha"] != senha:
+        return "ERR IP_REGISTERED_WITH_DIFFERENT_PASSWORD"
+
+    imagens_validas = []
+    for img in imagens:
+        if "," not in img:
+            return "ERR INVALID_MESSAGE_FORMAT"
+        md5, nome = img.split(",", 1)
+        if len(md5) != 32:
+            return "ERR INVALID_MESSAGE_FORMAT"
+        imagens_validas.append((md5, nome))
+
+    # Remove imagens antigas deste cliente
+    for md5, info in list(imagens_compartilhadas.items()):
+        if f"{ip}:{porta}" in info["clientes"]:
+            info["clientes"].remove(f"{ip}:{porta}")
             if not info["clientes"]:
                 del imagens_compartilhadas[md5]
 
-        print(f"[LOG] Cliente desconectado: {cliente}")
-        return {"status": "OK", "message": "CLIENT_DISCONNECTED"}
-    except Exception as e:
-        print(f"[ERRO] Erro ao desconectar cliente: {e}")
-        return {"status": "ERR", "message": "INTERNAL_SERVER_ERROR"}
+    # Adiciona novas imagens
+    for md5, nome in imagens_validas:
+        if md5 not in imagens_compartilhadas:
+            imagens_compartilhadas[md5] = {"nome": nome, "clientes": []}
+        imagens_compartilhadas[md5]["clientes"].append(f"{ip}:{porta}")
+
+    return f"OK {len(imagens_validas)}_REGISTERED_FILES"
+
+def listar_imagens():
+    if not imagens_compartilhadas:
+        return "ERR NO_IMAGES_AVAILABLE"
+    lista = []
+    for md5, info in imagens_compartilhadas.items():
+        linha = f"{md5},{info['nome']}"
+        for cli in info["clientes"]:
+            linha += f",{cli}"
+        lista.append(linha)
+    return ";".join(lista)
+
+def desconectar_cliente(senha, ip, porta):
+    cliente = encontrar_cliente(ip, porta)
+    if not cliente or cliente["senha"] != senha:
+        return "ERR IP_REGISTERED_WITH_DIFFERENT_PASSWORD"
+
+    clientes.remove(cliente)
+    for md5, info in list(imagens_compartilhadas.items()):
+        if f"{ip}:{porta}" in info["clientes"]:
+            info["clientes"].remove(f"{ip}:{porta}")
+            if not info["clientes"]:
+                del imagens_compartilhadas[md5]
+
+    return "OK CLIENT_FINISHED"
 
 def main():
-    """Inicia o servidor."""
-    try:
-        print("[LOG] Iniciando servidor...")
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
-            server.bind((SERVER_IP, SERVER_PORT))
-            print(f"[LOG] Servidor rodando na porta {SERVER_PORT}...")
+    print("[LOG] Servidor iniciado...")
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:
+        server.bind((SERVER_IP, SERVER_PORT))
+        print(f"[LOG] Servidor rodando na porta {SERVER_PORT}...")
 
-            while True:
-                print("[LOG] Aguardando mensagens...")
-                data, addr = server.recvfrom(4096)  # Aumentar buffer para 4096 bytes
-                print(f"[LOG] Mensagem recebida de {addr}: {data.decode()}")
+        while True:
+            data, addr = server.recvfrom(4096)
+            msg = data.decode().strip()
+            resposta = "ERR INVALID_MESSAGE_FORMAT"
 
-                try:
-                    mensagem = json.loads(data.decode())
-                    command = mensagem.get("command")
+            try:
+                partes = msg.split(" ", 3)
+                cmd = partes[0]
 
-                    if command == "REG":
-                        resposta = registrar_cliente(mensagem, addr)
-                    elif command == "LST":
-                        resposta = listar_imagens()
-                    elif command == "END":
-                        resposta = desconectar_cliente(mensagem, addr)
+                if cmd == "REG":
+                    # REG <SENHA> <PORTA> <IMAGENS>
+                    if len(partes) == 4:
+                        senha = partes[1]
+                        porta = int(partes[2])
+                        imagens_str = partes[3]
+                        imagens_lista = imagens_str.split(";")
+                        resposta = registrar_cliente(senha, addr[0], porta, imagens_lista)
                     else:
-                        resposta = {"status": "ERR", "message": "INVALID_COMMAND"}
-                except Exception as e:
-                    print(f"[ERRO] Erro ao processar mensagem: {e}")
-                    resposta = {"status": "ERR", "message": "INVALID_MESSAGE_FORMAT"}
+                        resposta = "ERR INVALID_MESSAGE_FORMAT"
 
-                print(f"[LOG] Enviando resposta para {addr}: {resposta}")
-                server.sendto(json.dumps(resposta).encode(), addr)
-    except Exception as e:
-        print(f"[ERRO] Ocorreu um erro no servidor: {e}")
+                elif cmd == "UPD":
+                    # UPD <SENHA> <PORTA> <IMAGENS>
+                    if len(partes) == 4:
+                        senha = partes[1]
+                        porta = int(partes[2])
+                        imagens_str = partes[3]
+                        imagens_lista = imagens_str.split(";")
+                        resposta = atualizar_registro(senha, addr[0], porta, imagens_lista)
+                    else:
+                        resposta = "ERR INVALID_MESSAGE_FORMAT"
+
+                elif cmd == "LST":
+                    if len(partes) == 1:
+                        resposta = listar_imagens()
+                    else:
+                        resposta = "ERR INVALID_MESSAGE_FORMAT"
+
+                elif cmd == "END":
+                    # END <SENHA> <PORTA>
+                    if len(partes) == 3:
+                        senha = partes[1]
+                        porta = int(partes[2])
+                        resposta = desconectar_cliente(senha, addr[0], porta)
+                    else:
+                        resposta = "ERR INVALID_MESSAGE_FORMAT"
+                else:
+                    resposta = "ERR INVALID_MESSAGE_FORMAT"
+
+            except Exception as e:
+                print("[ERRO]", e)
+                resposta = "ERR INVALID_MESSAGE_FORMAT"
+
+            server.sendto(resposta.encode(), addr)
 
 if __name__ == "__main__":
     main()
