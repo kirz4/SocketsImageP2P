@@ -1,6 +1,6 @@
 # SocketsImageP2P
 
-**Integrantes:**: Lucas Rabello, Lucas Macedo, Lucas Narita
+**Integrantes:** Lucas Rabello, Lucas Macedo, Lucas Narita
 
 
 Este projeto implementa um sistema de compartilhamento de imagens P2P (peer-to-peer) baseado em sockets. Ele possui dois componentes principais:
