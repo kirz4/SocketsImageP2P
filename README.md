@@ -1,5 +1,8 @@
 # SocketsImageP2P
 
+**Integrantes:**: Lucas Rabello, Lucas Macedo, Lucas Narita
+
+
 Este projeto implementa um sistema de compartilhamento de imagens P2P (peer-to-peer) baseado em sockets. Ele possui dois componentes principais:
 
 1. **Servidor (server)**: Responsável por registrar clientes, manter a lista de imagens e seus respectivos donos, bem como responder a requisições simples como registro, listagem, atualização e desconexão. O servidor não envia nem recebe as imagens, apenas gerencia as informações de quais clientes possuem quais arquivos.
