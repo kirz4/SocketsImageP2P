@@ -148,13 +148,6 @@ def atualizar_registro():
     lista_imagens = ";".join(imagens)
     mensagem = f"UPD {senha_cliente} {PORTA_TCP} {lista_imagens}"
 
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
-            client.sendto(mensagem.encode(), (SERVER_IP, SERVER_PORT))
-            response, _ = client.recvfrom(1024)
-            print(f"[LOG] Resposta do servidor: {response.decode()}")
-    except Exception as e:
-        print(f"[ERRO] Ocorreu um erro ao remover registro: {e}")
-
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.sendto(mensagem.encode(), (SERVER_IP, SERVER_PORT))
         resp, _ = client.recvfrom(1024)
@@ -165,42 +158,21 @@ def atualizar_registro():
             print("[ERRO]", resposta)
 
 def fazer_download():
-    """Realiza o download de uma imagem."""
-    try:
-        print("[LOG] Solicitando lista de imagens para download...")
-        mensagem = "LST"
-
-        # Solicita a lista de imagens do servidor
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
-            client.sendto(mensagem.encode(), (SERVER_IP, SERVER_PORT))
-            response, _ = client.recvfrom(4096)
-            resposta = json.loads(response.decode())
     # Primeiro obter lista de imagens
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as client:
         client.sendto("LST".encode(), (SERVER_IP, SERVER_PORT))
         resp, _ = client.recvfrom(4096)
         resposta = resp.decode().strip()
 
-            if resposta["status"] != "OK":
-                print("[ERRO] Não foi possível obter a lista de imagens.")
-                return
         if resposta.startswith("ERR"):
             print("[ERRO]", resposta)
             return
 
-            lista_imagens = resposta["imagens"]
-            if not lista_imagens:
-                print("[ERRO] Nenhuma imagem disponível para download.")
-                return
         imagens = resposta.split(";")
         if not imagens:
             print("[ERRO] Nenhuma imagem disponível.")
             return
 
-            print("[LOG] Imagens disponíveis:")
-            for idx, imagem in enumerate(lista_imagens, 1):
-                md5, nome, *clientes = imagem.split(",")
-                print(f"{idx}. {nome} - MD5: {md5} - Clientes: {', '.join(clientes)}")
         for i, img in enumerate(imagens, 1):
             partes = img.split(",")
             md5 = partes[0]
@@ -208,17 +180,6 @@ def fazer_download():
             clientes_img = partes[2:]
             print(f"{i}. {nome} (MD5: {md5}) - Clientes: {clientes_img}")
 
-            escolha = int(input("Escolha o número da imagem para download: ")) - 1
-            if escolha < 0 or escolha >= len(lista_imagens):
-                print("[ERRO] Escolha inválida.")
-                return
-
-            imagem_escolhida = lista_imagens[escolha]
-            md5, nome, *clientes = imagem_escolhida.split(",")
-            ip_porta = clientes[0].split(":")
-            ip, porta = ip_porta[0], int(ip_porta[1])
-
-            print(f"[LOG] Iniciando download de {nome} do cliente {ip}:{porta}...")
         escolha = input("Escolha o número da imagem para download: ")
         if not escolha.isdigit():
             print("[ERRO] Escolha inválida.")
@@ -242,10 +203,6 @@ def fazer_download():
         porta_down = int(ip_porta[1])
         print(f"[LOG] Iniciando download de {nome} do cliente {ip_down}:{porta_down}...")
 
-            # Conexão TCP com o cliente que possui a imagem
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_client:
-                tcp_client.connect((ip, porta))
-                tcp_client.sendall(f"GET {md5}".encode())
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as tcp_client:
             tcp_client.connect((ip_down, porta_down))
             tcp_client.sendall(f"GET {md5}".encode())
@@ -266,11 +223,6 @@ def fazer_download():
                         break
                     f.write(dados)
 
-            print(f"[LOG] Download de {nome} concluído!")
-    except Exception as e:
-        print(f"[ERRO] Ocorreu um erro ao realizar o download: {e}")
-
-        
         print("[LOG] Download concluído da porta", porta_down)
 def desconectar_cliente():
     if not PORTA_TCP or not senha_cliente:
@@ -313,7 +265,6 @@ def main():
             break
         else:
             print("[ERRO] Opção inválida!")
-
 
 if __name__ == "__main__":
     main()
